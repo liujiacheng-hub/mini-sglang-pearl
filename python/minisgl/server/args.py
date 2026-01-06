@@ -89,6 +89,34 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         help="The tensor parallelism size.",
     )
 
+    # TODO(ljc)
+    parser.add_argument(
+        "--enable-pearl",
+        action="store_true",
+        help="The tensor parallelism size.",
+    )
+
+    parser.add_argument(
+        "--draft-model-path",
+        type=str,
+        default=None,
+        help="The path of the draft model weights. This can be a local folder or a Hugging Face repo ID.",
+    )
+
+    parser.add_argument(
+        "--tp-size-target",
+        type=int,
+        default=0,
+        help="The tensor parallelism size of Target Model.",
+    )
+
+    parser.add_argument(
+        "--tp-size-draft",
+        type=int,
+        default=0,
+        help="The tensor parallelism size of Draft Model.",
+    )
+
     parser.add_argument(
         "--max-running-requests",
         type=int,
@@ -226,8 +254,8 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
             kwargs["dtype"] = DTYPE_MAP[dtype_or_str]
         else:
             kwargs["dtype"] = dtype_or_str
-
-    kwargs["tp_info"] = DistributedInfo(0, kwargs["tensor_parallel_size"])
+    # TODO(ljc)
+    kwargs["tp_info"] = DistributedInfo(0, kwargs["tensor_parallel_size"], "default", 0, kwargs["tensor_parallel_size"])
     del kwargs["tensor_parallel_size"]
 
     result = ServerArgs(**kwargs)

@@ -36,7 +36,9 @@ def _align_up_32(num: int) -> int:
 class Engine:
     def __init__(self, config: EngineConfig):
         self.model_config = config.model_config
-        set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
+        # TODO(ljc)
+        # set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
+        set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size, actor=config.tp_info.actor, local_rank=config.tp_info.local_rank, local_size=config.tp_info.local_size)
 
         assert not torch.cuda.is_initialized()
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
@@ -51,8 +53,12 @@ class Engine:
 
         # load model and determine number of pages
         set_rope_device(self.device)
+        # TODO(ljc)
         with torch.device("meta"), torch_dtype(config.dtype):
-            self.model = create_model(config.model_path, config.model_config)
+            if config.enable_pearl and config.tp_info.is_draft():
+                self.model = create_model(config.draft_model_path, config.model_config)
+            else:
+                self.model = create_model(config.model_path, config.model_config)
         self.model.load_state_dict(self._load_weight_state_dict(config))
         self.num_pages = self.dummy_page = self._determine_num_pages(init_free_memory, config)
         self.kv_cache = create_kvcache(
@@ -105,11 +111,35 @@ class Engine:
         )
 
     def _init_communication(self, config: EngineConfig) -> torch.distributed.ProcessGroup:
-        if config.tp_info.size == 1 or config.use_pynccl:
+        # TODO(ljc)
+        if config.enable_pearl:
             torch.distributed.init_process_group(
-                backend="gloo",
+                backend="nccl",
                 rank=config.tp_info.rank,
                 world_size=config.tp_info.size,
+                timeout=timedelta(seconds=config.distributed_timeout),
+                init_method=config.distributed_addr,
+            )
+            draft_group = torch.distributed.new_group(config.draft_model_devices, backend="gloo")
+            target_group = torch.distributed.new_group(config.target_model_devices, backend="gloo")
+            
+            self.verify_group = torch.distributed.new_group([config.draft_model_devices[0]] + config.target_model_devices, backend="nccl")
+            is_draft = config.tp_info.is_draft()
+            tp_cpu_group = draft_group if is_draft else target_group
+
+            from minisgl.distributed.info import set_tp_group
+            if is_draft:
+                tp_group_nccl = torch.distributed.new_group(config.draft_model_devices, backend="nccl")
+            else:
+                tp_group_nccl = torch.distributed.new_group(config.target_model_devices, backend="nccl")
+            set_tp_group(tp_group_nccl)
+
+            assert tp_cpu_group is not None
+        elif config.tp_info.local_size == 1 or config.use_pynccl:
+            torch.distributed.init_process_group(
+                backend="gloo",
+                rank=config.tp_info.local_rank,
+                world_size=config.tp_info.local_size,
                 timeout=timedelta(seconds=config.distributed_timeout),
                 init_method=config.distributed_addr,
             )
@@ -122,8 +152,8 @@ class Engine:
         else:
             torch.distributed.init_process_group(
                 backend="nccl",
-                rank=config.tp_info.rank,
-                world_size=config.tp_info.size,
+                rank=config.tp_info.local_rank,
+                world_size=config.tp_info.local_size,
                 timeout=timedelta(seconds=config.distributed_timeout),
                 init_method=config.distributed_addr,
             )
@@ -138,9 +168,14 @@ class Engine:
                 for k, v in self.model.state_dict().items()
             }
         else:
+            # TODO(ljc)
+            if config.enable_pearl and config.tp_info.is_draft():
+                cur_path = config.draft_model_path
+            else:
+                cur_path = config.model_path
             return {
                 k: v.to(self.dtype)
-                for k, v in load_hf_weight(config.model_path, self.device).items()
+                for k, v in load_hf_weight(cur_path, self.device).items()
             }
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:

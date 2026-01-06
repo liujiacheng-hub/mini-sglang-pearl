@@ -28,9 +28,17 @@ class EngineConfig:
     use_pynccl: bool = True
     max_seq_len_override: int | None = None
     num_page_override: int | None = None  # if not None, will override the number of pages
+    # TODO(ljc)
+    enable_pearl: bool = False
+    draft_model_path: str | None = None
+    tp_size_target: int = 1
+    tp_size_draft: int = 0
 
+    # TODO(ljc)
     @cached_property
     def hf_config(self):
+        if self.enable_pearl and self.tp_info.is_draft():
+            return cached_load_hf_config(self.draft_model_path)
         return cached_load_hf_config(self.model_path)
 
     @cached_property
@@ -52,3 +60,12 @@ class EngineConfig:
     @property
     def distributed_addr(self) -> str:
         return "tcp://127.0.0.1:23333"
+
+    # TODO(ljc)
+    @property
+    def target_model_devices(self) -> List[int]:
+        return list(range(0, self.tp_size_target))
+    
+    @property
+    def draft_model_devices(self) -> List[int]:
+        return list(range(self.tp_size_target, self.tp_size_target + self.tp_size_draft))

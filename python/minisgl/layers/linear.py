@@ -41,7 +41,7 @@ class LinearColParallelMerged(_LinearTPImpl):
     ):
         # check that all output sizes are divisible by tp_size
         tp_info = get_tp_info()
-        tp_output_sizes = [divide_even(size, tp_info.size) for size in output_sizes]
+        tp_output_sizes = [divide_even(size, tp_info.local_size) for size in output_sizes]
         output_size = sum(output_sizes)
         tp_output_size = sum(tp_output_sizes)
         super().__init__(input_size, output_size, input_size, tp_output_size, has_bias)
@@ -59,7 +59,7 @@ class LinearQKVMerged(_LinearTPImpl):
         tp_info = get_tp_info()
 
         GQA_ratio = divide_even(num_qo_heads, num_kv_heads)
-        local_num_kv = divide_even(num_kv_heads, tp_info.size)
+        local_num_kv = divide_even(num_kv_heads, tp_info.local_size)
         full_isize = hidden_size
         full_osize = (GQA_ratio + 2) * num_kv_heads * head_dim
         local_isize = hidden_size
@@ -72,10 +72,10 @@ class LinearOProj(_LinearTPImpl):
         tp_info = get_tp_info()
         full_isize = input_size
         full_osize = output_size
-        local_isize = divide_even(input_size, tp_info.size)
+        local_isize = divide_even(input_size, tp_info.local_size)
         local_osize = output_size
         self._comm = DistributedCommunicator()
-        self._tp_size = tp_info.size
+        self._tp_size = tp_info.local_size
         super().__init__(full_isize, full_osize, local_isize, local_osize, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -93,10 +93,10 @@ class LinearRowParallel(_LinearTPImpl):
         has_bias: bool,
     ):
         tp_info = get_tp_info()
-        local_input_size = divide_even(input_size, tp_info.size)
+        local_input_size = divide_even(input_size, tp_info.local_size)
         local_output_size = output_size
         self._comm = DistributedCommunicator()
-        self._tp_size = tp_info.size
+        self._tp_size = tp_info.local_size
         super().__init__(input_size, output_size, local_input_size, local_output_size, has_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

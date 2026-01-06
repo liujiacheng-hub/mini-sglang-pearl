@@ -97,7 +97,7 @@ class GraphRunner:
             sorted(self.graph_bs_list, reverse=True),
             desc="Preparing for capturing CUDA graphs...",
             unit="batch",
-            disable=not get_tp_info().is_primary(),  # disable for non-primary ranks
+            disable=not get_tp_info().is_primary_actor(),  # disable for non-primary ranks
         )
         pool = None
         for bs in pbar:

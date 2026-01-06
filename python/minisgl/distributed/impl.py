@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from minisgl.distributed import DistributedInfo
     from minisgl.kernel import PyNCCLCommunicator
 
+from minisgl.distributed.info import get_tp_info, get_tp_group
 
 @dataclass
 class DistributedImpl(ABC):
@@ -24,20 +25,24 @@ class DistributedImpl(ABC):
 @dataclass
 class TorchDistributedImpl(DistributedImpl):
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        tp_size = dist.get_world_size()
+        tp_info = get_tp_info()
+        tp_size = tp_info.local_size
+        tp_group = get_tp_group()
         if tp_size == 1:
             return x
-        dist.all_reduce(x, op=dist.ReduceOp.SUM)
+        dist.all_reduce(x, op=dist.ReduceOp.SUM, group=tp_group)
         return x
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
-        tp_size = dist.get_world_size()
+        tp_info = get_tp_info()
+        tp_size = tp_info.local_size
+        tp_group = get_tp_group()
         if tp_size == 1:
             return x
         shape = list(x.shape)
         shape[0] = shape[0] * tp_size
         out = torch.empty(shape, dtype=x.dtype, device=x.device)
-        dist.all_gather_into_tensor(out, x)
+        dist.all_gather_into_tensor(out, x, group=tp_group)
         return out
 
 
@@ -76,13 +81,13 @@ def enable_pynccl_distributed(
     """
     Enable PyNCCL-based distributed communication for tensor parallelism.
     """
-    if tp_info.size == 1:
+    if tp_info.local_size == 1:
         return
     from minisgl.kernel import init_pynccl
 
     comm = init_pynccl(
-        tp_rank=tp_info.rank,
-        tp_size=tp_info.size,
+        tp_rank=tp_info.local_rank,
+        tp_size=tp_info.local_size,
         tp_cpu_group=tp_cpu_group,
         max_size_bytes=max_bytes,
     )

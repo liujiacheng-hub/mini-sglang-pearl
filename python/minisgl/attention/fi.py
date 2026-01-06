@@ -116,7 +116,7 @@ class FlashInferBackend(BaseAttnBackend):
         self.decode_wrappers._int_workspace_buffer = self.int_workspace_buffer
 
         # initialize some data members
-        tp_size = get_tp_info().size
+        tp_size = get_tp_info().local_size
         self.qo_head_local = divide_even(self.config.num_qo_heads, tp_size)
         self.kv_head_local = divide_even(self.config.num_kv_heads, tp_size)
 
